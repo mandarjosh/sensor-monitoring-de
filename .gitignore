@@ -1,0 +1,47 @@
+# --- Secrets & credentials (NEVER commit these) ---
+.env
+.env.*
+*.key
+*.pem
+*_key.json
+service-account*.json
+credentials.json
+profiles.yml
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# --- dbt ---
+dbt_project/target/
+dbt_project/dbt_packages/
+dbt_project/logs/
+.user.yml
+
+# --- Airflow ---
+airflow/logs/
+airflow/plugins/__pycache__/
+airflow/*.db
+airflow/airflow.cfg
+airflow/webserver_config.py
+
+# --- Terraform ---
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/*.tfvars
+infra/.terraform.lock.hcl
+
+# --- Docker ---
+*.log
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/
