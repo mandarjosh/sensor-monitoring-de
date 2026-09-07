@@ -120,9 +120,56 @@ Format per entry: **What we did → Why → Interview talking point → Challeng
 
 ---
 
+## 2026-09-07 — Fixed git identity (repo-local override)
+
+**What we did**
+- Discovered the *global* git identity on this Mac (`Mandar <mandar@woodfrog.tech>`)
+  is tied to a work/org GitHub account, not the personal account
+  (`github.com/mandarjosh`) this project will be pushed to.
+- Set a **repo-local** git identity (`git config user.name` / `user.email`,
+  without `--global`) scoped to just this project:
+  `Mandar Joshi <mandarjoshi575@gmail.com>`.
+- Confirmed the global config was left untouched (still the org identity, for
+  other/work repos on this machine).
+- Amended the one existing commit (`git commit --amend --reset-author`) to fix
+  its author, since it hadn't been pushed anywhere yet — safe to rewrite local
+  history at this stage.
+
+**Why**
+- Git identity is resolved per-repo: local config (set inside a repo directory)
+  overrides global config (machine-wide default). Without a local override,
+  every commit here would've inherited the org email.
+- This matters because GitHub attributes commits to accounts by matching the
+  commit's email to a *verified* email on that account. A commit made with an
+  org email won't show as authored by your personal account, and depending on
+  org policy, an org-owned identity might not even be appropriate to use on a
+  personal learning repo pushed to a personal account.
+- We fixed it *before* pushing to GitHub — rewriting commit authorship
+  (`--amend`, or `rebase` for multiple commits) is only safe to do on commits
+  that haven't been shared/pushed yet. Once pushed and others may have pulled,
+  rewriting history requires force-push and coordination — a good rule to
+  internalize now.
+
+**Interview talking point**
+- "I know git identity resolves per-repo — global config is just a default,
+  and you can override `user.name`/`user.email` locally per repository. I also
+  know the difference between amending unpushed history (safe) versus rewriting
+  already-pushed/shared history (requires force-push and can break
+  collaborators) — I fixed an identity mistake here while it was still
+  local-only, before it became a shared-history problem."
+
+**Challenges observed**
+- Real one: caught a genuine identity misconfiguration before it caused a
+  problem (wrong account attribution on GitHub, or an org-owned email ending
+  up on a personal public repo). This is a legitimate "attention to detail"
+  story, not a manufactured exercise.
+
+---
+
 ## Up next (not started)
 
-- [ ] First commit (folders + NOTES.md + .gitignore)
+- [ ] Connect to GitHub (`github.com/mandarjosh`) — decide `gh` CLI vs. browser + remote
+- [ ] Push initial commit
 - [ ] Python producer: minimal sensor simulator writing to local JSON (no Kafka yet)
 - [ ] Local Kafka via Docker Compose (Redpanda or real Kafka — decision pending)
 - [ ] Kafka consumer → GCS bronze writer (batched, to respect free-tier write-ops limit)
