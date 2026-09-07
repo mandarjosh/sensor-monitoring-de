@@ -166,10 +166,70 @@ Format per entry: **What we did → Why → Interview talking point → Challeng
 
 ---
 
+## 2026-09-07 — Connected repo to GitHub + auth troubleshooting
+
+**What we did**
+- Created empty repo `github.com/mandarjosh/sensor-monitoring-de` on GitHub (browser).
+- Connected local repo: `git remote add origin https://github.com/mandarjosh/sensor-monitoring-de.git`.
+- Hit a real, unstaged problem: `git push -u origin main` appeared to "hang"
+  with no visible prompt. Debugged systematically instead of guessing:
+  1. Verified the `osxkeychain` credential helper binary itself works fine
+     (tested directly, resolved instantly) — ruled out the helper being broken.
+  2. Verified network/TLS/DNS to `github.com` works fine (`GIT_TRACE`/
+     `GIT_CURL_VERBOSE` + a manual `git ls-remote`) — ruled out network/proxy issues.
+  3. Inspected the actual stuck process tree (`ps -ef`) for the hung terminal's
+     PID — found the real cause: **Cursor's IDE Git integration was intercepting
+     the credential prompt via its own `askpass.sh`/`askpass-main.js`**, popping
+     up a small input box inside the Cursor UI (not inside the terminal panel
+     itself) — easy to miss, looked identical to a genuine hang.
+  4. Bypassed it explicitly: `GIT_ASKPASS= SSH_ASKPASS= GIT_TERMINAL_PROMPT=1 git -c credential.helper= push -u origin main`
+     — this forces git to prompt directly in the terminal, no GUI helper in the way.
+  5. Got a clear, different error this time: `remote: Invalid username or
+     token. Password authentication is not supported for Git operations.`
+     — root cause: a plain GitHub account **password** was entered as the
+     password field. GitHub deprecated password auth for git over HTTPS in 2021.
+  6. Fix: generated a GitHub **Personal Access Token** (classic, `repo` scope,
+     90-day expiry) at github.com/settings/tokens, used that as the password
+     instead. Push succeeded: `main -> main [new branch]`, upstream tracking set.
+- Verified locally: `git status` shows `up to date with 'origin/main'`, clean
+  working tree, both commits present with correct author.
+
+**Why**
+- This is a genuinely common real-world debugging sequence: "is it the tool,
+  is it the network, is it the environment/IDE, or is it a credentials
+  problem?" — worked through in that order, from most-general to
+  most-specific, using process inspection (`ps -ef`) rather than guessing.
+- GitHub requiring a PAT (or SSH key) instead of a password is a hard security
+  requirement now industry-wide, not GitHub-specific — same is true for GitLab,
+  Bitbucket, etc. Understanding *why* (passwords are weaker, non-revocable
+  per-purpose, and don't support scoped permissions the way tokens do) matters
+  more than just knowing the fix.
+- IDE Git integrations (VS Code, Cursor, etc.) commonly inject their own
+  askpass helper that intercepts terminal credential prompts and renders them
+  as a GUI element instead — worth recognizing this pattern immediately next
+  time, since it looks exactly like a frozen terminal.
+
+**Interview talking point**
+- "I debugged a git push that looked hung by isolating each layer independently
+  — credential helper, network/TLS, then the actual OS process tree — rather
+  than assuming the first candidate cause. Found it was the IDE's own askpass
+  integration intercepting the prompt into a UI element outside the terminal.
+  Separately, I know why GitHub requires a Personal Access Token or SSH key
+  instead of a password for git operations, and how token scopes (`repo`,
+  fine-grained permissions) work."
+- Also worth mentioning: PATs should be scoped minimally and rotated (we set
+  a 90-day expiry deliberately, not "no expiration") — a good security hygiene
+  habit to mention.
+
+**Challenges observed**
+- Real, unplanned challenge (not manufactured): git auth failure with a
+  misleading "hang" symptom, root-caused via systematic process/network
+  isolation rather than trial-and-error. Good, honest interview story.
+
+---
+
 ## Up next (not started)
 
-- [ ] Connect to GitHub (`github.com/mandarjosh`) — decide `gh` CLI vs. browser + remote
-- [ ] Push initial commit
 - [ ] Python producer: minimal sensor simulator writing to local JSON (no Kafka yet)
 - [ ] Local Kafka via Docker Compose (Redpanda or real Kafka — decision pending)
 - [ ] Kafka consumer → GCS bronze writer (batched, to respect free-tier write-ops limit)
