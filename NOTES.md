@@ -1,8 +1,9 @@
 # Project Journal — Sensor Monitoring Data Platform
 
-Learning project simulating an Encardio-style structural/geotechnical sensor
-monitoring platform. Stack: Kafka → GCP (GCS + Iceberg) → Snowflake → dbt →
-Airflow, wrapped in GitHub Actions CI/CD.
+Learning project simulating a structural/geotechnical sensor monitoring
+platform (dams, bridges, tunnels — the kind of IoT instrumentation used in
+civil/geotechnical engineering). Stack: Kafka → GCP (GCS + Iceberg) →
+Snowflake → dbt → Airflow, wrapped in GitHub Actions CI/CD.
 
 **Purpose of this file**: record every setup step, *why* we made each choice,
 and any "challenge" (deliberately induced failure/edge case) we hit — so this
@@ -285,7 +286,7 @@ Format per entry: **What we did → Why → Interview talking point → Challeng
 - Created a Python virtual environment (`.venv/`) scoped to this project
   (never install packages globally/system-wide).
 - Built `producer/sensors.py`: a dependency-free (standard-library-only)
-  sensor simulator modeling 4 Encardio-style instrument types:
+  sensor simulator modeling 4 geotechnical/structural instrument types:
   - `Piezometer` (pore water pressure, kPa) — dam/embankment safety
   - `StrainGauge` (microstrain) — structural load/fatigue
   - `Tiltmeter` (tilt angle, degrees) — slope/wall stability
@@ -295,7 +296,8 @@ Format per entry: **What we did → Why → Interview talking point → Challeng
     values each call — real sensors drift slowly, they don't teleport.
   - Each has a small deliberate probability of an "alarm" spike, so
     downstream layers (dbt marts, later) have real threshold-breach events
-    to detect, mirroring Encardio's Drishti/Proqio real-time alerting.
+    to detect, mirroring how real structural-monitoring platforms do
+    real-time threshold-based alerting.
   - Output format: **JSON Lines** (one JSON object per line, appended), not
     a single JSON array — this is the standard format for streaming/log-style
     data (can append forever without re-parsing the whole file) and matches
@@ -348,9 +350,86 @@ Format per entry: **What we did → Why → Interview talking point → Challeng
 
 ---
 
+## 2026-09-07 — Second messy data source ("Vendor B") + de-Encardio'd notes
+
+**What we did**
+- Removed all references to the real company name from the project notes
+  and code comments (kept the domain concept — geotechnical/structural
+  monitoring — but genericized the description).
+- Built `producer/vendor_b_sensors.py` + `producer/generate_local_vendor_b.py`:
+  a SECOND, deliberately different and messier data source simulating the
+  same 4 physical sensor types, as if reported by a different vendor's
+  device firmware. This models a very common real situation: you rarely
+  design your source schemas, you get what the vendor/device gives you.
+  Concretely, Vendor B differs from Vendor A (`sensors.py`) in:
+  - **Nested JSON** (`meta.dev`, `reading.v`, `reading.ts`) vs. Vendor A's flat fields
+  - **Different field names entirely** (`dev`/`v`/`ts`/`code` vs. `device_id`/`value`/`timestamp`/`status`)
+  - **Different device-type codes** (PZ/SG/TM/CM vs. Vendor A's PI/ST/TI/CR)
+  - **Numeric status codes** (0/1/2) instead of string enum (`OK`/`WARNING`/`ALARM`)
+  - **Battery in millivolts**, not volts — a real unit conversion is needed,
+    not just a rename
+  - **Inconsistent timestamp units**: ~15% of readings report Unix epoch in
+    milliseconds instead of seconds, with NO field indicating which — you can
+    only tell by checking the magnitude of the number (10 digits = seconds,
+    13 digits = milliseconds). Verified this actually happened in the
+    generated output (saw both a 10-digit and 13-digit `ts` value from
+    adjacent device readings).
+  - **Missing optional field**: `batt_mv` is absent on ~5% of readings, as if
+    that firmware revision doesn't report battery at all.
+  - **Injected duplicate records**: ~1.5% of readings are followed by an
+    exact duplicate write — simulates normal at-least-once delivery/retry
+    behavior in real message systems (a consumer WILL see duplicates
+    sometimes; that's not a bug in the pipeline, it's an expected condition
+    to design for).
+  - **Injected corrupted/truncated lines**: ~2% of lines are cut off
+    mid-JSON-object, simulating a partial write or crash. Verified: ran a
+    batch of ~328 lines, got 5 lines that fail `json.loads()` -- confirms
+    the corruption logic actually produces invalid JSON, not just "different"
+    JSON.
+
+**Why**
+- If both sources were clean and uniformly shaped, the bronze -> silver step
+  in dbt would have nothing meaningful to do (just a rename). Two genuinely
+  incompatible schemas is what makes staging models earn their keep: parsing
+  nested JSON, unit conversion, timestamp normalization, status-code mapping,
+  dedup logic, and malformed-record handling all become REAL problems to
+  solve, not hypothetical ones.
+- The timestamp-units bug specifically is a very common real-world class of
+  bug (epoch seconds vs. milliseconds looks identical in type, differs only
+  in magnitude) — deliberately including it means we'll have to build a real
+  detection/normalization rule later (e.g. "if ts > 10^12, treat as ms")
+  instead of just trusting the data.
+- Corrupted-line handling matters at the ingestion boundary specifically:
+  a bronze-loading step that does `json.loads()` on a whole file naively will
+  crash and potentially lose an entire batch because of ONE bad line. The
+  correct pattern (to build later) is per-line parsing with try/except,
+  routing bad lines to a dead-letter/quarantine location rather than
+  crashing or silently dropping the whole batch.
+
+**Interview talking point**
+- "I intentionally built a second data source with an incompatible schema —
+  nested JSON, different field names, epoch-ms vs. epoch-s timestamps with no
+  indicator field, numeric status codes, and injected corrupted/duplicate
+  records — specifically so my ingestion and staging layers had to solve real
+  reconciliation problems, not just pass clean data through."
+- "I can explain the epoch seconds-vs-milliseconds ambiguity as a real class
+  of bug, and the standard fix (checking magnitude, e.g. values over ~10^12
+  are almost certainly milliseconds) — as well as why duplicate records are
+  an expected, designed-for condition in at-least-once delivery systems
+  rather than something to be surprised by."
+
+**Challenges observed**
+- Verified two real things about the injected mess, not just assumed they
+  worked: (1) confirmed a 13-digit (ms) timestamp actually appeared alongside
+  10-digit (s) timestamps in the same generated batch: (2) confirmed the
+  "corrupted" lines are genuinely invalid JSON by running them through
+  `json.loads()` and catching real `JSONDecodeError`s (5 out of 328 lines).
+
+---
+
 ## Up next (not started)
 
-- [ ] Kafka (local, Docker) — producer sends these readings to a topic instead of a file
+- [ ] Kafka (local, Docker) — both producers send to topics instead of files
 - [ ] Local Kafka via Docker Compose (Redpanda or real Kafka — decision pending)
 - [ ] Kafka consumer → GCS bronze writer (batched, to respect free-tier write-ops limit)
 - [ ] Snowflake account creation + warehouse/database/role setup

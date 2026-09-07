@@ -1,26 +1,3 @@
-"""
-Sensor simulator for an Encardio-style structural/geotechnical monitoring site.
-
-This module has ZERO external dependencies on purpose (Kafka, Snowflake, etc.
-come in later steps) — right now the only goal is: can we generate realistic,
-varied sensor readings as plain Python objects / JSON?
-
-Each sensor type below mirrors a real Encardio instrument category:
-  - Piezometer   -> pore water pressure (kPa)      [dams, embankments]
-  - StrainGauge  -> microstrain (µε)                [bridges, structures]
-  - Tiltmeter    -> tilt angle X/Y (degrees)        [slopes, retaining walls]
-  - CrackMeter   -> crack displacement (mm)         [tunnels, structures]
-
-Design choices worth noting (interview-relevant):
-  - Each simulator keeps internal STATE (a running baseline value) and
-    perturbs it slightly each call, rather than returning pure random noise.
-    Real sensors drift slowly over time; pure `random.uniform()` every call
-    would look nothing like real telemetry.
-  - A small, deliberate probability of an "alarm" spike is built in per
-    sensor type -- this is what gives our future silver/gold dbt layers
-    something meaningful to detect (threshold-based alerting, just like
-    Encardio's Drishti/Proqio dashboards do).
-"""
 
 from __future__ import annotations
 
