@@ -228,6 +228,57 @@ Format per entry: **What we did → Why → Interview talking point → Challeng
 
 ---
 
+---
+
+## 2026-09-07 — Token exposure caught + rotated, repo fully synced
+
+**What we did**
+- While debugging the auth flow (previous entry), a PAT was accidentally typed
+  as part of a shell command (`GIT_ASKPASS= ghp_xxx= git ...`) instead of at
+  the interactive password prompt — this put the token in plaintext in shell
+  history / terminal logs, which counts as a credential exposure even though
+  no one else saw it directly.
+- Caught this by re-reading the terminal transcript carefully rather than just
+  checking "did the push succeed."
+- **Revoked** the exposed token on GitHub immediately
+  (github.com/settings/tokens → Delete), then generated a fresh replacement
+  token (classic, `repo` scope, 90-day expiry) and used *that* correctly — only
+  entering it at the actual `Password for 'https://...':` prompt.
+- Re-ran plain `git push` (no `credential.helper=` override this time) so the
+  default `osxkeychain` helper stores the working token for future pushes.
+- Verified full sync: `git fetch` + `git status` shows `up to date with
+  'origin/main'`, all 3 commits present on GitHub.
+
+**Why**
+- The rule with any leaked secret (token, password, API key) is: **treat it as
+  compromised the moment it's exposed anywhere it shouldn't be** — shell
+  history, logs, chat, screenshots — and revoke/rotate immediately, rather than
+  assuming "probably fine, nobody saw it." Revocation is cheap; a compromised
+  token being used maliciously is not.
+- This is exactly why PATs have scopes and expirations by design (we chose
+  90 days, not "no expiration") — short-lived, narrowly-scoped credentials
+  limit the blast radius when a mistake like this happens, which it will,
+  to everyone, eventually.
+- Command-line arguments and environment variable assignments are visible in
+  shell history (`~/.zsh_history`) and process listings (`ps -ef` shows full
+  command lines) — never pass secrets as CLI args; only via interactive
+  prompts, environment variables sourced from a `.env` file (already
+  gitignored), or a secrets manager.
+
+**Interview talking point**
+- "I treat credential exposure as compromised-by-default, not
+  compromised-only-if-misused — I caught a token accidentally typed into a
+  command line instead of an interactive prompt, and rotated it immediately
+  rather than assuming it was fine. I also default to short-lived, narrowly
+  scoped tokens specifically so mistakes like this have limited impact."
+
+**Challenges observed**
+- Real challenge: a genuine near-miss credential leak, caught and remediated
+  correctly (revoke + rotate), not just a "gotcha" exercise. Good, honest
+  story about security hygiene under real conditions.
+
+---
+
 ## Up next (not started)
 
 - [ ] Python producer: minimal sensor simulator writing to local JSON (no Kafka yet)
