@@ -279,9 +279,78 @@ Format per entry: **What we did → Why → Interview talking point → Challeng
 
 ---
 
+## 2026-09-07 — Python sensor simulator (local, no Kafka/cloud yet)
+
+**What we did**
+- Created a Python virtual environment (`.venv/`) scoped to this project
+  (never install packages globally/system-wide).
+- Built `producer/sensors.py`: a dependency-free (standard-library-only)
+  sensor simulator modeling 4 Encardio-style instrument types:
+  - `Piezometer` (pore water pressure, kPa) — dam/embankment safety
+  - `StrainGauge` (microstrain) — structural load/fatigue
+  - `Tiltmeter` (tilt angle, degrees) — slope/wall stability
+  - `CrackMeter` (crack displacement, mm) — tunnel/structure crack tracking
+  - Each sensor keeps internal **state** (a running baseline) and perturbs it
+    slightly per reading (drift + Gaussian noise), rather than pure random
+    values each call — real sensors drift slowly, they don't teleport.
+  - Each has a small deliberate probability of an "alarm" spike, so
+    downstream layers (dbt marts, later) have real threshold-breach events
+    to detect, mirroring Encardio's Drishti/Proqio real-time alerting.
+  - Output format: **JSON Lines** (one JSON object per line, appended), not
+    a single JSON array — this is the standard format for streaming/log-style
+    data (can append forever without re-parsing the whole file) and matches
+    what a real Kafka-consumer-to-object-storage batch writer typically does.
+- Built `producer/generate_local.py`: a CLI to run the simulator and write
+  output to `producer/output/readings.jsonl` (gitignored — generated data,
+  not source).
+- Ran it: 12 devices (3 per sensor type × 4 types) × 4 ticks = 48 readings.
+  Verified output by eye — realistic baselines per type, 2 genuine ALARM
+  events triggered naturally by the spike logic, battery voltage slowly
+  draining across ticks.
+- Fixed a small path bug along the way: the default output path was relative
+  and produced a nested `producer/producer/output/` when run from inside the
+  `producer/` folder — fixed by resolving the default path from
+  `Path(__file__).resolve().parent` instead of a relative string, so the
+  script behaves correctly regardless of the caller's current working
+  directory.
+
+**Why**
+- No external dependencies at this stage keeps the "does the data model make
+  sense" question separate from "does Kafka/networking work" — one variable
+  at a time, easier to debug either layer independently later.
+- Stateful, drifting simulation (vs. pure `random.uniform()` every call)
+  matters because it's what makes the eventual dbt tests/marts meaningful —
+  e.g. a "value changed too fast" anomaly check only means something if
+  normal values *don't* jump around wildly in the first place.
+- `Path(__file__).resolve().parent`-based defaults are a general good habit
+  for any CLI script: makes behavior independent of the caller's current
+  working directory, which avoids a whole class of "works on my machine
+  depending on which folder I ran it from" bugs.
+
+**Interview talking point**
+- "I modeled sensor telemetry as stateful processes with drift and noise
+  rather than pure randomness, specifically so downstream data-quality tests
+  and anomaly detection would have realistic signal to work with — a
+  simulator that's 'too random' teaches you nothing about anomaly detection
+  because everything already looks anomalous."
+- "I chose JSON Lines over a JSON array for the output format because it's
+  append-friendly and matches how streaming data actually gets batch-written
+  in real pipelines — you don't want to re-serialize an entire growing array
+  every time you add one record."
+- Can also speak to the CWD-independent path bug as a real, small debugging
+  moment — habit of using `__file__`-relative paths in scripts now.
+
+**Challenges observed**
+- Real (small) bug: default output path was relative to *current working
+  directory*, not the script's location — produced an incorrect nested
+  folder path when invoked from within `producer/`. Fixed properly rather
+  than just deleting the wrong file and re-running from the right directory.
+
+---
+
 ## Up next (not started)
 
-- [ ] Python producer: minimal sensor simulator writing to local JSON (no Kafka yet)
+- [ ] Kafka (local, Docker) — producer sends these readings to a topic instead of a file
 - [ ] Local Kafka via Docker Compose (Redpanda or real Kafka — decision pending)
 - [ ] Kafka consumer → GCS bronze writer (batched, to respect free-tier write-ops limit)
 - [ ] Snowflake account creation + warehouse/database/role setup

@@ -18,6 +18,12 @@ env/
 .pytest_cache/
 .mypy_cache/
 
+# --- Generated data (never commit sample/output data, only the code that produces it) ---
+producer/output/
+consumer/output/
+*.jsonl
+*.parquet
+
 # --- dbt ---
 dbt_project/target/
 dbt_project/dbt_packages/
